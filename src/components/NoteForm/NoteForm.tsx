@@ -1,50 +1,51 @@
 import { Formik, Form, Field, ErrorMessage } from "formik";
 import * as Yup from "yup";
 import css from "./NoteForm.module.css";
-import type { NoteTag } from "../../types/note";
-
-interface NoteFormValues {
-  title: string;
-  content: string;
-  tag: NoteTag | "";
-}
-
-interface NoteFormProps {
-  onSubmit: (values: {
-    title: string;
-    content: string;
-    tag: NoteTag;
-  }) => Promise<void> | void;
-  onCancel: () => void;
-}
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { createNote, type CreateNoteParams } from "../../services/noteService";
+import type { Note, NoteTag } from "../../types/note";
 
 const TAGS: NoteTag[] = ["Todo", "Work", "Personal", "Meeting", "Shopping"];
 
 const schema = Yup.object({
   title: Yup.string().min(3, "Min 3").max(50, "Max 50").required("Required"),
   content: Yup.string().max(500, "Max 500"),
-  tag: Yup.mixed<NoteTag>()
-    .oneOf(TAGS as readonly NoteTag[], "Invalid tag")
-    .required("Required"),
+  tag: Yup.mixed<NoteTag>().oneOf(TAGS, "Invalid tag").required("Required"),
 });
 
-export default function NoteForm({ onSubmit, onCancel }: NoteFormProps) {
-  const initialValues: NoteFormValues = { title: "", content: "", tag: "" };
+interface NoteFormProps {
+  onCancel: () => void; // лише закрити модалку
+}
+
+export default function NoteForm({ onCancel }: NoteFormProps) {
+  const queryClient = useQueryClient();
+
+  const createMutation = useMutation<Note, Error, CreateNoteParams>({
+    mutationFn: (payload) => createNote(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["notes"] });
+      onCancel(); // закриваємо модалку після успіху
+    },
+  });
 
   return (
     <Formik
-      initialValues={initialValues}
+      initialValues={{ title: "", content: "", tag: "" as unknown as NoteTag }}
       validationSchema={schema}
       onSubmit={async (vals, helpers) => {
         try {
-          const payload = { ...vals, tag: vals.tag as NoteTag };
-          await onSubmit(payload);
+          await createMutation.mutateAsync({
+            title: vals.title,
+            content: vals.content,
+            tag: vals.tag,
+          });
         } finally {
           helpers.setSubmitting(false);
         }
       }}
     >
       {({ isSubmitting, isValid }) => (
+        // структура строго з ТЗ
         <Form className={css.form}>
           <div className={css.formGroup}>
             <label htmlFor="title">Title</label>
@@ -94,7 +95,7 @@ export default function NoteForm({ onSubmit, onCancel }: NoteFormProps) {
             <button
               type="submit"
               className={css.submitButton}
-              disabled={isSubmitting || !isValid}
+              disabled={isSubmitting || createMutation.isPending || !isValid}
             >
               Create note
             </button>

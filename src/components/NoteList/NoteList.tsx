@@ -1,12 +1,29 @@
+// src/components/NoteList/NoteList.tsx
+import { useState } from "react";
 import css from "./NoteList.module.css";
 import type { Note } from "../../types/note";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { deleteNote } from "../../services/noteService";
 
 interface NoteListProps {
   items: Note[];
-  onDelete?: (id: string) => void;
 }
 
-export default function NoteList({ items, onDelete }: NoteListProps) {
+export default function NoteList({ items }: NoteListProps) {
+  // Хуки всегда вызываем без условий
+  const queryClient = useQueryClient();
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const deleteMutation = useMutation<Note, Error, string>({
+    mutationFn: (id) => deleteNote(id),
+    onMutate: (id) => setDeletingId(id),
+    onSettled: () => setDeletingId(null),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["notes"] });
+    },
+  });
+
+  // А вот условный рендер — пожалуйста
   if (!items.length) return null;
 
   return (
@@ -20,9 +37,10 @@ export default function NoteList({ items, onDelete }: NoteListProps) {
             <button
               type="button"
               className={css.button}
-              onClick={() => onDelete?.(n.id)}
+              onClick={() => deleteMutation.mutate(n.id)}
+              disabled={deletingId === n.id || deleteMutation.isPending}
             >
-              Delete
+              {deletingId === n.id ? "Deleting…" : "Delete"}
             </button>
           </div>
         </li>
